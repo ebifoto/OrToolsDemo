@@ -3,7 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29709.97
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Back2Base.OrDemo", "Back2Base.OrDemo\Back2Base.OrDemo.csproj", "{40B78C59-3ABA-462B-AE09-70646BA30E96}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Back2Base.OrDemo", "Back2Base.OrDemo\Back2Base.OrDemo.csproj", "{40B78C59-3ABA-462B-AE09-70646BA30E96}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Back2Base.SchedulingDemo", "Back2Base.SchedulingDemo\Back2Base.SchedulingDemo.csproj", "{B91DEF17-FA46-46EC-BF66-83E02BB89EB0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +17,10 @@ Global
 		{40B78C59-3ABA-462B-AE09-70646BA30E96}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{40B78C59-3ABA-462B-AE09-70646BA30E96}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{40B78C59-3ABA-462B-AE09-70646BA30E96}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B91DEF17-FA46-46EC-BF66-83E02BB89EB0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B91DEF17-FA46-46EC-BF66-83E02BB89EB0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B91DEF17-FA46-46EC-BF66-83E02BB89EB0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B91DEF17-FA46-46EC-BF66-83E02BB89EB0}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using Google.OrTools.ConstraintSolver;
 using Google.Protobuf.WellKnownTypes;
 
@@ -19,28 +18,29 @@ namespace Back2Base.OrDemo
 
             AddDistanceConstraints(manager, routingModel, data);
             AddVehicleEndTimeConstraints(manager, routingModel, data);
-            //AddMaximumTravelTimeConstraints(manager, routingModel, data);
-            //AddCapacityConstraints(manager, routingModel, data);
-            //AddPickupDeliveryConstraints(manager, routingModel, data);
+            AddCapacityConstraints(manager, routingModel, data);
+            AddPickupDeliveryConstraints(manager, routingModel, data);
             AddTimeWindowConstraints(manager, routingModel, data);
-            //AddPenalties(manager, routingModel, data);
-            //AddPreLoadConstraints(manager, routingModel, data);
-            //AddForcedVehicleConstraints(manager, routingModel, data);
 
             var searchParameters = operations_research_constraint_solver.DefaultRoutingSearchParameters();
-            searchParameters.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.PathMostConstrainedArc;
+            searchParameters.FirstSolutionStrategy = FirstSolutionStrategy.Types.Value.PathCheapestArc;
+#if DEBUG
+            searchParameters.LogSearch = true;
+#endif
             searchParameters.LocalSearchMetaheuristic = LocalSearchMetaheuristic.Types.Value.GuidedLocalSearch;
             searchParameters.TimeLimit = new Duration
             {
-                Seconds = 10
+                Seconds = 2
             };
-
+            
             var solution = routingModel.SolveWithParameters(searchParameters);
+
+            ThrowIfUnsolved(routingModel);
 
             PrintSolution(data, routingModel, manager, solution);
         }
 
-        static void PrintSolution(
+        private static void PrintSolution(
             in DataModel data,
             in RoutingModel routing,
             in RoutingIndexManager manager,
@@ -48,30 +48,59 @@ namespace Back2Base.OrDemo
         {
             // Inspect solution.
             long totalDistance = 0;
-            long totalLoad = 0;
-            for (int i = 0; i < data.VehicleCount; ++i)
+            var distanceDimension = routing.GetDimensionOrDie("Distance");
+            var timeDimension = routing.GetDimensionOrDie("Time");
+            for (var i = 0; i < data.VehicleCount; ++i)
             {
                 Console.WriteLine("Route for Vehicle {0}:", i);
                 long routeDistance = 0;
                 long routeLoad = 0;
                 var index = routing.Start(i);
-                while (routing.IsEnd(index) == false)
+                while (true)
                 {
                     long nodeIndex = manager.IndexToNode(index);
-                    routeLoad += data.Demands[nodeIndex];
-                    Console.Write("{0} Load({1}) -> ", nodeIndex, routeLoad);
+                    var demand = data.Demands[nodeIndex];
+                    var symbol = '\0';
+                    if (demand != 0)
+                    {
+                        symbol = demand > 0 ? 'P' : 'D';
+                    }
+
+                    routeLoad += demand;
+                    var routeTime = solution.Min(timeDimension.CumulVar(index));
+                    var distance = solution.Value(distanceDimension.CumulVar(index));
+
+                    Console.WriteLine($"Time: {routeTime.T()} Location: {nodeIndex} Load: {routeLoad.ToString().PadRight(2)} {symbol} D: {distance/1000} km");
+                    if (routing.IsEnd(index))
+                    {
+                        break;
+                    }
                     var previousIndex = index;
                     index = solution.Value(routing.NextVar(index));
                     routeDistance += routing.GetArcCostForVehicle(previousIndex, index, 0);
                 }
-                Console.WriteLine("{0}", manager.IndexToNode((int)index));
                 Console.WriteLine("Distance of the route: {0}m", routeDistance);
                 Console.WriteLine();
                 totalDistance += routeDistance;
-                totalLoad += routeLoad;
             }
             Console.WriteLine("Total distance of all routes: {0}m", totalDistance);
-            Console.WriteLine("Total load of all routes: {0}m", totalLoad);
+        }
+
+        private static void ThrowIfUnsolved(RoutingModel routingModel)
+        {
+            switch (routingModel.GetStatus())
+            {
+                case 0:
+                    throw new RoutingModelException("Problem not solved yet.");
+                case 1:
+                    break; // Success
+                case 2:
+                    throw new RoutingModelException("No solution found to the problem.");
+                case 3:
+                    throw new RoutingModelException("Time limit reached before finding a solution.");
+                case 4:
+                    throw new RoutingModelException("Model, model parameters, or flags are not valid.");
+            }
         }
 
         private static void AddDistanceConstraints(RoutingIndexManager manager, RoutingModel model, DataModel data)
@@ -90,12 +119,12 @@ namespace Back2Base.OrDemo
             model.AddDimension(
                 distanceCallback,
                 0,
-                2000,
+                2000 * 1000,
                 true, // 0km start
                 "Distance");
 
             var distanceDimension = model.GetMutableDimension("Distance");
-            distanceDimension.SetGlobalSpanCostCoefficient(100);
+            distanceDimension.SetGlobalSpanCostCoefficient(100); // minimize the length of the lognest route
         }
 
         private static void AddVehicleEndTimeConstraints(RoutingIndexManager manager, RoutingModel model, DataModel data)
@@ -105,8 +134,8 @@ namespace Back2Base.OrDemo
                 var fromNode = manager.IndexToNode(fromIndex);
                 var toNode = manager.IndexToNode(toIndex);
 
-                var travelTime = (int) data.TimeMatrix[fromNode, toNode] * 60;
-                var serviceTime = 15;
+                var travelTime = (int) data.TimeMatrix[fromNode, toNode];
+                var serviceTime = 0;
 
                 return serviceTime + travelTime;
             }
@@ -115,8 +144,8 @@ namespace Back2Base.OrDemo
 
             model.AddDimensionWithVehicleCapacity(
                 timeEvaluator,
-                240,
-                data.EndTimes.Select(e => e * 60).ToArray(),
+                180,
+                data.EndTimes,
                 false, // start of the day
                 "Time");
         }
@@ -130,7 +159,8 @@ namespace Back2Base.OrDemo
                 }
             );
             model.AddDimensionWithVehicleCapacity(
-                demandCallbackIndex, 0,
+                demandCallbackIndex, 
+                0,
                 data.VehicleCapacities, // vehicle maximum capacities
                 true,
                 "Capacity");
@@ -167,34 +197,26 @@ namespace Back2Base.OrDemo
             {
                 long index = manager.NodeToIndex(i);
                 timeDimension.CumulVar(index).SetRange(
-                    data.TimeWindows[i, 0] * 60,
-                    data.TimeWindows[i, 1] * 60);
+                    data.TimeWindows[i, 0],
+                    data.TimeWindows[i, 1]);
+                model.AddToAssignment(timeDimension.SlackVar(index));
             }
             // Add time window constraints for each vehicle start node.
             for (int i = 0; i < data.VehicleCount; ++i)
             {
                 long index = model.Start(i);
                 timeDimension.CumulVar(index).SetRange(
-                    data.TimeWindows[0, 0] * 60,
-                    data.TimeWindows[0, 1] * 60);
+                    data.TimeWindows[0, 0],
+                    data.TimeWindows[0, 1]);
+                model.AddToAssignment(timeDimension.SlackVar(index));
             }
             // Minimize start and end times
             for (int i = 0; i < data.VehicleCount; ++i)
             {
-                model.AddVariableMinimizedByFinalizer(
+                model.AddVariableMaximizedByFinalizer(
                     timeDimension.CumulVar(model.Start(i)));
                 model.AddVariableMinimizedByFinalizer(
                     timeDimension.CumulVar(model.End(i)));
-            }
-        }
-
-        private static void AddPenalties(RoutingIndexManager manager, RoutingModel model, DataModel data)
-        {
-            var penalty = 1000;
-            for (var i = 1; i < data.DistanceMatrix.GetLength(0); ++i)
-            {
-                model.AddDisjunction(
-                    new long[] { manager.NodeToIndex(i) }, penalty);
             }
         }
     }
